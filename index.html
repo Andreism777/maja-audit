@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="et">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Maja audit</title>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#111827;background:#f3f4f6}
+    *{box-sizing:border-box} body{margin:0}
+    header{position:sticky;top:0;z-index:10;background:#111827;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+    header h1{font-size:18px;margin:0}
+    main{max-width:860px;margin:auto;padding:14px}
+    .card{background:#fff;border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 1px 4px #0002}
+    label{display:block;font-size:13px;font-weight:650;margin:10px 0 5px}
+    input,textarea,select,button{width:100%;font:inherit}
+    input,textarea,select{padding:11px;border:1px solid #d1d5db;border-radius:10px;background:#fff}
+    textarea{min-height:84px;resize:vertical}
+    button{padding:12px;border:0;border-radius:10px;font-weight:700;cursor:pointer}
+    .primary{background:#111827;color:white}.secondary{background:#e5e7eb;color:#111827}.danger{background:#fee2e2;color:#991b1b}
+    .grid{display:grid;gap:10px}.grid2{grid-template-columns:1fr 1fr}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .issue{display:grid;grid-template-columns:110px 1fr;gap:12px}
+    .thumbs{display:grid;grid-template-columns:repeat(2,1fr);gap:5px}
+    .thumbs img,.filebox{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#e5e7eb}
+    .filebox{display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:10px;overflow:hidden}
+    .attachGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-top:8px}
+    .attach{border:1px solid #e5e7eb;border-radius:10px;padding:6px;position:relative}
+    .attach img{width:100%;height:90px;object-fit:cover;border-radius:7px}
+    .attachName{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:4px}
+    .removeAttach{position:absolute;right:4px;top:4px;width:26px;height:26px;padding:0;border-radius:50%;background:#111827;color:white}
+    .meta{font-size:12px;color:#6b7280;margin-top:5px}
+    .badge{display:inline-block;padding:3px 7px;border-radius:999px;font-size:12px;font-weight:700}
+    .low{background:#dcfce7;color:#166534}.medium{background:#fef3c7;color:#92400e}.high{background:#fee2e2;color:#991b1b}.critical{background:#111827;color:#fff}
+    .rowActions{display:flex;gap:8px;margin-top:8px}.rowActions button{width:auto;padding:7px 10px}
+    .empty{text-align:center;color:#6b7280;padding:24px 8px}
+    .hint{font-size:12px;color:#6b7280;margin-top:5px}
+    .notice{font-size:12px;line-height:1.45;color:#374151;background:#f9fafb;border-radius:10px;padding:10px;margin-top:10px}
+    @media(max-width:560px){.grid2,.actions{grid-template-columns:1fr}.issue{grid-template-columns:88px 1fr}}
+  </style>
+</head>
+<body>
+<header><h1>Maja audit</h1><span id="count">0 puudust</span></header>
+<main>
+  <section class="card">
+    <form id="issueForm">
+      <input type="hidden" id="editId">
+
+      <label>Fotod ja failid</label>
+      <input id="attachments" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" multiple>
+      <div class="hint">Saad valida korraga mitu faili või lisada telefonist mitu fotot.</div>
+      <div id="attachmentPreview" class="attachGrid"></div>
+
+      <label>Puuduse / rikke kirjeldus</label>
+      <textarea id="description" required placeholder="Näiteks: valamu all on leke ja tagaseinal on veejäljed"></textarea>
+
+      <div class="grid grid2">
+        <div>
+          <label>Olulisus</label>
+          <select id="priority">
+            <option value="Madal">Madal</option>
+            <option value="Keskmine" selected>Keskmine</option>
+            <option value="Kõrge">Kõrge</option>
+            <option value="Kriitiline">Kriitiline</option>
+          </select>
+        </div>
+        <div>
+          <label>Avastamise kuupäev</label>
+          <input id="foundDate" type="date" required>
+        </div>
+      </div>
+
+      <label>Ruum / asukoht</label>
+      <input id="location" placeholder="Köök, vannituba, fassaad, tehnoruum...">
+
+      <div class="actions" style="margin-top:14px">
+        <button class="primary" type="submit">Salvesta puudus</button>
+        <button class="secondary" type="button" id="cancelEdit">Tühjenda vorm</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="actions">
+      <button class="primary" id="makeReport">Loo täidetav PDF</button>
+      <button class="secondary" id="exportJson">Varukoopia</button>
+    </div>
+    <div class="actions" style="margin-top:10px">
+      <button class="secondary" id="importBtn">Taasta andmed</button>
+      <button class="danger" id="clearAll">Kustuta kõik</button>
+    </div>
+    <input id="importFile" type="file" accept="application/json" hidden>
+    <div class="notice">
+      PDF-is on väljad <b>Lahendus</b>, <b>Vastutaja</b> ja <b>Tähtaeg</b> päriselt redigeeritavad.
+      Vastutaja on rippmenüü. Tähtaeg on üks kuupäevaväli formaadis PP.KK.AAAA. Adobe Acrobat käsitleb seda kuupäevaväljana; Edge'is ja Firefoxis jääb see redigeeritavaks kuupäevatekstiks.
+    </div>
+  </section>
+
+  <section id="issues"></section>
+</main>
+
+<script>
+const DB_NAME='houseAuditDB2', STORE='issues';
+let db, currentAttachments=[];
+
+const $=id=>document.getElementById(id);
+const today=()=>new Date().toISOString().slice(0,10);
+$('foundDate').value=today();
+
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded=e=>{
+      const d=e.target.result;
+      if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE,{keyPath:'id'});
+    };
+    req.onsuccess=e=>{db=e.target.result;resolve(db)};
+    req.onerror=()=>reject(req.error);
+  });
+}
+function tx(mode='readonly'){return db.transaction(STORE,mode).objectStore(STORE)}
+function getAll(){return new Promise((res,rej)=>{const r=tx().getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function put(v){return new Promise((res,rej)=>{const r=tx('readwrite').put(v);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function del(id){return new Promise((res,rej)=>{const r=tx('readwrite').delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function clearDB(){return new Promise((res,rej)=>{const r=tx('readwrite').clear();r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+
+function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function prClass(p){
+  const map={'Низкая':'low','Средняя':'medium','Высокая':'high','Критическая':'critical',
+             'Madal':'low','Keskmine':'medium','Kõrge':'high','Kriitiline':'critical'};
+  return map[p]||'medium';
+}
+function priorityEt(p){
+  return ({'Низкая':'Madal','Средняя':'Keskmine','Высокая':'Kõrge','Критическая':'Kriitiline'})[p] || p;
+}
+function isImage(a){return (a.type||'').startsWith('image/')}
+
+async function fileToAttachment(file){
+  const data = await new Promise((resolve,reject)=>{
+    const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);
+  });
+  if(!file.type.startsWith('image/')){
+    return {name:file.name,type:file.type||'application/octet-stream',data};
+  }
+  return await new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const max=1600, scale=Math.min(1,max/Math.max(img.width,img.height));
+      const c=document.createElement('canvas');
+      c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      resolve({name:file.name,type:'image/jpeg',data:c.toDataURL('image/jpeg',0.8)});
+    };
+    img.src=data;
+  });
+}
+
+$('attachments').addEventListener('change',async e=>{
+  const files=[...e.target.files];
+  for(const f of files)currentAttachments.push(await fileToAttachment(f));
+  e.target.value='';
+  renderAttachmentPreview();
+});
+
+function renderAttachmentPreview(){
+  $('attachmentPreview').innerHTML=currentAttachments.map((a,i)=>`
+    <div class="attach">
+      <button type="button" class="removeAttach" onclick="removeAttachment(${i})">×</button>
+      ${isImage(a)?`<img src="${a.data}" alt="">`:`<div class="filebox">📎<br>${esc(a.name)}</div>`}
+      <div class="attachName">${esc(a.name)}</div>
+    </div>`).join('');
+}
+window.removeAttachment=i=>{currentAttachments.splice(i,1);renderAttachmentPreview()};
+
+async function render(){
+  const items=(await getAll()).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  $('count').textContent=`${items.length} ${items.length===1?'puudus':'puudust'}`;
+  const root=$('issues');
+  if(!items.length){root.innerHTML='<div class="card empty">Salvestatud puudusi veel ei ole.</div>';return}
+  root.innerHTML=items.map(x=>{
+    const at=x.attachments||[];
+    const show=at.slice(0,4);
+    return `<article class="card issue">
+      <div class="thumbs">
+        ${show.length?show.map(a=>isImage(a)?`<img src="${a.data}" alt="">`:`<div class="filebox">📎</div>`).join(''):'<div class="filebox">Faile pole</div>'}
+      </div>
+      <div>
+        <div><span class="badge ${prClass(x.priority)}">${esc(priorityEt(x.priority))}</span></div>
+        <div style="font-weight:750;margin-top:6px">${esc(x.description)}</div>
+        <div class="meta">${esc(x.location||'Asukoht määramata')} · ${esc(x.foundDate)} · manuseid: ${at.length}</div>
+        <div class="rowActions">
+          <button class="secondary" onclick="editIssue('${x.id}')">Muuda</button>
+          <button class="danger" onclick="removeIssue('${x.id}')">Kustuta</button>
+        </div>
+      </div>
+    </article>`
+  }).join('');
+}
+
+$('issueForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const id=$('editId').value||(crypto.randomUUID?crypto.randomUUID():Date.now().toString());
+  const old=$('editId').value?(await getAll()).find(x=>x.id===id):null;
+  await put({
+    id,
+    attachments:currentAttachments,
+    description:$('description').value.trim(),
+    priority:$('priority').value,
+    foundDate:$('foundDate').value,
+    location:$('location').value.trim(),
+    createdAt:old?.createdAt||new Date().toISOString()
+  });
+  resetForm();await render();
+});
+
+function resetForm(){
+  $('issueForm').reset();$('editId').value='';$('foundDate').value=today();
+  currentAttachments=[];renderAttachmentPreview();
+}
+$('cancelEdit').onclick=resetForm;
+
+window.editIssue=async id=>{
+  const x=(await getAll()).find(v=>v.id===id);if(!x)return;
+  $('editId').value=x.id;$('description').value=x.description;
+  $('priority').value=priorityEt(x.priority);
+  $('foundDate').value=x.foundDate;$('location').value=x.location||'';
+  currentAttachments=[...(x.attachments||[])];renderAttachmentPreview();
+  scrollTo({top:0,behavior:'smooth'});
+};
+window.removeIssue=async id=>{if(confirm('Kas kustutada see puudus?')){await del(id);render()}};
+
+function dataUrlToBytes(dataUrl){
+  const base64=dataUrl.split(',')[1]||'';
+  const bin=atob(base64), out=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
+  return out;
+}
+function wrapText(text,font,size,maxWidth){
+  const words=String(text||'').split(/\s+/), lines=[];let line='';
+  for(const word of words){
+    const test=line?line+' '+word:word;
+    if(font.widthOfTextAtSize(test,size)<=maxWidth)line=test;
+    else{if(line)lines.push(line);line=word}
+  }
+  if(line)lines.push(line);
+  return lines.length?lines:['-'];
+}
+function drawWrapped(page,text,font,size,x,y,maxWidth,lineHeight,maxLines=5){
+  const lines=wrapText(text,font,size,maxWidth).slice(0,maxLines);
+  lines.forEach((l,i)=>page.drawText(l,{x,y:y-i*lineHeight,size,font}));
+  return y-lines.length*lineHeight;
+}
+
+async function createFillablePdf(items){
+  if(!window.PDFLib)throw new Error('PDF-moodul ei ole laaditud. Kontrolli internetiühendust ja proovi uuesti.');
+  const {PDFDocument,StandardFonts,rgb,PDFName,PDFDict,PDFString}=PDFLib;
+  const pdf=await PDFDocument.create();
+  const font=await pdf.embedFont(StandardFonts.Helvetica);
+  const bold=await pdf.embedFont(StandardFonts.HelveticaBold);
+  const form=pdf.getForm();
+  const A4=[595.28,841.89];
+  const responsible=['Valimata','Omanik','Haldur','Töövõtja','Torumees','Elektrik','Ehitaja'];
+
+  pdf.setTitle('Maja auditi aruanne');
+  pdf.setSubject('Maja audit - täidetav aruanne');
+  pdf.setCreator('Maja audit');
+
+  // Lisame mitte-pildifailid PDF-i manustena.
+  for(let idx=0;idx<items.length;idx++){
+    const docs=(items[idx].attachments||[]).filter(a=>!isImage(a));
+    for(let j=0;j<docs.length;j++){
+      const a=docs[j];
+      try{
+        await pdf.attach(dataUrlToBytes(a.data), `${idx+1}_${a.name}`, {
+          mimeType:a.type||'application/octet-stream',
+          description:`Puudus ${idx+1}: ${items[idx].description}`
+        });
+      }catch(e){console.warn('Manuse lisamine ebaõnnestus',a.name,e)}
+    }
+  }
+
+  for(let idx=0;idx<items.length;idx++){
+    const item=items[idx];
+    const images=(item.attachments||[]).filter(isImage);
+    const batches=[];
+    if(images.length===0)batches.push([]);
+    else for(let i=0;i<images.length;i+=4)batches.push(images.slice(i,i+4));
+
+    for(let batchIndex=0;batchIndex<batches.length;batchIndex++){
+      const page=pdf.addPage(A4);
+      const W=page.getWidth(),H=page.getHeight();
+      const margin=38;
+      let y=H-margin;
+
+      page.drawText(`Maja audit - puudus nr ${idx+1}`,{x:margin,y:y-8,size:17,font:bold});
+      y-=36;
+
+      if(batchIndex===0){
+        page.drawText('Puuduse / rikke kirjeldus',{x:margin,y,size:9,font});
+        y-=15;
+        y=drawWrapped(page,item.description,bold,11,margin,y,W-2*margin,14,4)-6;
+
+        page.drawText('Ruum / asukoht',{x:margin,y,size:9,font});
+        page.drawText(item.location||'-',{x:145,y,size:10,font:bold});
+        y-=20;
+
+        page.drawText('Olulisus',{x:margin,y,size:9,font});
+        page.drawText(priorityEt(item.priority),{x:145,y,size:10,font:bold});
+        page.drawText('Avastamise kuupäev',{x:300,y,size:9,font});
+        page.drawText(item.foundDate||'-',{x:430,y,size:10,font:bold});
+        y-=28;
+      }else{
+        page.drawText(`Lisafotod (${batchIndex*4+1}-${Math.min(batchIndex*4+4,images.length)})`,{x:margin,y,size:10,font:bold});
+        y-=20;
+      }
+
+      const batch=batches[batchIndex];
+      if(batch.length){
+        const gap=10, cellW=(W-2*margin-gap)/2, cellH=145;
+        for(let bi=0;bi<batch.length;bi++){
+          const a=batch[bi];
+          try{
+            const bytes=dataUrlToBytes(a.data);
+            const img=a.type==='image/png'?await pdf.embedPng(bytes):await pdf.embedJpg(bytes);
+            const row=Math.floor(bi/2), col=bi%2;
+            const boxX=margin+col*(cellW+gap);
+            const boxY=y-(row+1)*cellH-row*gap;
+            const scale=Math.min(cellW/img.width,(cellH-18)/img.height);
+            const iw=img.width*scale, ih=img.height*scale;
+            page.drawRectangle({x:boxX,y:boxY,width:cellW,height:cellH,borderWidth:0.7,borderColor:rgb(.75,.75,.75)});
+            page.drawImage(img,{x:boxX+(cellW-iw)/2,y:boxY+18+(cellH-18-ih)/2,width:iw,height:ih});
+            page.drawText((a.name||'Foto').slice(0,36),{x:boxX+4,y:boxY+5,size:7,font});
+          }catch(e){console.warn('Pildi lisamine ebaõnnestus',e)}
+        }
+        y-=Math.ceil(batch.length/2)*(cellH+gap)+6;
+      }else{
+        page.drawText('Fotod puuduvad',{x:margin,y,size:9,font});
+        y-=26;
+      }
+
+      if(batchIndex===0){
+        const docs=(item.attachments||[]).filter(a=>!isImage(a));
+        if(docs.length){
+          page.drawText('PDF-ile lisatud failid:',{x:margin,y,size:9,font:bold});
+          y-=14;
+          docs.slice(0,5).forEach(a=>{
+            page.drawText(`- ${(a.name||'fail').slice(0,70)}`,{x:margin+6,y,size:8,font});
+            y-=11;
+          });
+          y-=4;
+        }
+
+        // Hoidke väljad lehe alumises osas, et need jääksid ühtlaseks.
+        const fieldTop=Math.min(y-10,235);
+        page.drawText('Lahendus',{x:margin,y:fieldTop,size:10,font:bold});
+        const solution=form.createTextField(`lahendus_${idx+1}`);
+        solution.enableMultiline();
+        solution.addToPage(page,{
+          x:margin,
+          y:fieldTop-108,
+          width:W-2*margin,
+          height:96,
+          borderWidth:1,
+          borderColor:rgb(.45,.45,.45),
+          backgroundColor:rgb(1,1,1)
+        });
+        // Edge/Firefox: fikseeritud fondisuurus pärast widget'i loomist.
+        // Nii on /DA juba olemas ja tekst ei muutu hiigelsuureks.
+        solution.setFontSize(10);
+
+        const y2=fieldTop-134;
+        page.drawText('Vastutaja',{x:margin,y:y2,size:10,font:bold});
+        const resp=form.createDropdown(`vastutaja_${idx+1}`);
+        resp.addOptions(responsible);
+        resp.select('Valimata');
+        resp.addToPage(page,{x:margin,y:y2-29,width:235,height:23,borderWidth:1,borderColor:rgb(.45,.45,.45),backgroundColor:rgb(1,1,1)});
+
+        page.drawText('Tähtaeg',{x:330,y:y2,size:10,font:bold});
+
+        // Üks kuupäevaväli Euroopa formaadis PP.KK.AAAA.
+        // Acrobat kasutab /AA JavaScripti kuupäevaväljana; Edge/Firefox jätavad välja
+        // tavaliseks redigeeritavaks tekstiväljaks, sest brauseri PDF-vaatur ei kuva
+        // AcroFormile süsteemset kalendrit.
+        const deadline=form.createTextField(`tahtaeg_${idx+1}`);
+        deadline.setText('');
+        deadline.addToPage(page,{
+          x:330,y:y2-29,width:W-margin-330,height:23,
+          borderWidth:1,
+          borderColor:rgb(.45,.45,.45),
+          backgroundColor:rgb(1,1,1)
+        });
+        deadline.setFontSize(10);
+
+        try{
+          const acro=deadline.acroField;
+          const aa=pdf.context.obj({
+            F: pdf.context.obj({
+              S: PDFName.of('JavaScript'),
+              JS: PDFString.of('AFDate_FormatEx("dd.mm.yyyy");')
+            }),
+            K: pdf.context.obj({
+              S: PDFName.of('JavaScript'),
+              JS: PDFString.of('AFDate_KeystrokeEx("dd.mm.yyyy");')
+            })
+          });
+          acro.dict.set(PDFName.of('AA'), aa);
+        }catch(e){
+          console.warn('Kuupäeva PDF-toiminguid ei saanud lisada',e);
+        }
+
+        page.drawText('PP.KK.AAAA',{x:334,y:y2-42,size:7,font});
+
+        page.drawText(`Lehekülg ${pdf.getPageCount()}`,{x:W-95,y:20,size:7,font});
+      }else{
+        page.drawText(`Lehekülg ${pdf.getPageCount()}`,{x:W-95,y:20,size:7,font});
+      }
+    }
+  }
+
+  form.updateFieldAppearances(font);
+  return await pdf.save();
+}
+
+$('makeReport').onclick=async()=>{
+  const btn=$('makeReport');
+  try{
+    const items=(await getAll()).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
+    if(!items.length){alert('Lisa kõigepealt vähemalt üks puudus.');return}
+    btn.disabled=true;btn.textContent='PDF-i loomine...';
+    const bytes=await createFillablePdf(items);
+    const blob=new Blob([bytes],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`maja-audit-${today()}.pdf`;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+  }catch(e){
+    alert(e.message||'PDF-i loomine ebaõnnestus.');
+    console.error(e);
+  }finally{
+    btn.disabled=false;btn.textContent='Loo täidetav PDF';
+  }
+};
+
+$('exportJson').onclick=async()=>{
+  const data=JSON.stringify(await getAll());
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+  a.download='maja-audit-varukoopia.json';a.click();URL.revokeObjectURL(a.href);
+};
+$('importBtn').onclick=()=>$('importFile').click();
+$('importFile').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const arr=JSON.parse(await f.text());if(!Array.isArray(arr))throw new Error();
+    for(const x of arr)await put(x);
+    await render();alert('Andmed on taastatud.');
+  }catch{alert('Varukoopia faili ei õnnestunud lugeda.')}
+};
+$('clearAll').onclick=async()=>{if(confirm('Kas kustutada kõik kirjed jäädavalt?')){await clearDB();render()}};
+
+if('serviceWorker' in navigator)navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+openDB().then(render);
+</script>
+</body>
+</html>
